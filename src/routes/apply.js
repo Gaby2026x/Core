@@ -73,7 +73,7 @@ function requireSession(req, res, next) {
   next();
 }
 
-function renderVerifyPage(res, req, options = {}) {
+function renderVerifyPage(req, res, options = {}) {
   const { errorMessage = '', missingFront = false, missingBack = false } = options;
   return res.render('verify', {
     email: (req.body && req.body.email) || req.session.applicationDraft.email || '',
@@ -206,7 +206,7 @@ router.get('/verify', requireSession, (req, res) => {
   }
   
   console.log('Rendering verify page');
-  renderVerifyPage(res, req);
+  renderVerifyPage(req, res);
 });
 
 router.post('/verify', requireSession, driversLicenseUpload.fields(dlFields), async (req, res) => {
