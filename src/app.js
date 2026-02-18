@@ -35,7 +35,7 @@ class UpstashSessionStore extends session.Store {
 
   async set(sid, sess, callback) {
     try {
-      const maxAge = Number(sess?.cookie?.maxAge);
+      const maxAge = Number(sess && sess.cookie && sess.cookie.maxAge);
       const ttlSeconds = Number.isFinite(maxAge) && maxAge > 0
         ? Math.ceil(maxAge / 1000)
         : this.defaultTtlSeconds;
@@ -57,7 +57,7 @@ class UpstashSessionStore extends session.Store {
 
   async touch(sid, sess, callback) {
     try {
-      const maxAge = Number(sess?.cookie?.maxAge);
+      const maxAge = Number(sess && sess.cookie && sess.cookie.maxAge);
       const ttlSeconds = Number.isFinite(maxAge) && maxAge > 0
         ? Math.ceil(maxAge / 1000)
         : this.defaultTtlSeconds;
@@ -129,7 +129,7 @@ if (redisClient) {
     });
     console.log('Using Upstash-backed session store');
   } catch (err) {
-    console.warn('Failed to create Redis store, using memory store:', err.message);
+    console.warn('Failed to create Upstash session store, using memory store:', err.message);
   }
 } else {
   console.warn('Using memory session store (not recommended for production)');

@@ -306,7 +306,7 @@ a:hover {
   transition: all var(--transition-fast);
   position: relative;
 }
-.site-header nav a.btn.ghost::after { display: none; content: none; }
+.site-header nav a.btn.ghost::after { display: none; }
 /* Hide Apply Now button in header on all screens */
 .site-header nav a.btn.primary {
   display: none !important;
