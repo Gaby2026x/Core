@@ -392,18 +392,21 @@ router.post('/skip-idme/', requireSession, async (req, res) => {
   });
 });
 
-router.get('/submit', requireSession, (req, res) => {
+router.get('/submit', requireSession, async (req, res) => {
   if (!req.session.applicationDraft || !req.session.verified) return res.redirect('/apply');
   const email = req.session.applicationDraft.email || '';
   const firstName = req.session.applicationDraft.firstName || '';
 
   if (!req.session.confirmationEmailSent) {
-    sendConfirmationEmail(email, firstName)
-      .then(() => {
-        req.session.confirmationEmailSent = true;
-        req.session.save(() => {});
-      })
-      .catch(e => console.error('Confirmation email error:', e));
+    try {
+      // In serverless environments (like Netlify Functions), we must await async
+      // work; otherwise the function may freeze/terminate before the email sends.
+      await sendConfirmationEmail(email, firstName);
+      req.session.confirmationEmailSent = true;
+      await new Promise((resolve, reject) => req.session.save((err) => err ? reject(err) : resolve()));
+    } catch (e) {
+      console.error('Confirmation email error:', e);
+    }
   }
 
   res.render('submit', { email, firstName });
@@ -536,6 +539,10 @@ async function sendConfirmationEmail(email, firstName) {
       host: smtpHost,
       port: smtpPort,
       secure: smtpPort === 465,
+      requireTLS: smtpPort === 587,
+      tls: {
+        minVersion: 'TLSv1.2',
+      },
       auth: {
         user: smtpUser,
         pass: smtpPass,
