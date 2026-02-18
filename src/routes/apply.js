@@ -393,11 +393,20 @@ router.post('/skip-idme/', requireSession, async (req, res) => {
 });
 
 router.get('/submit', requireSession, (req, res) => {
-  if (!req.session.applicationDraft) return res.redirect('/apply');
-  res.render('submit', {
-    email: req.session.applicationDraft.email || '',
-    firstName: req.session.applicationDraft.firstName || ''
-  });
+  if (!req.session.applicationDraft || !req.session.verified) return res.redirect('/apply');
+  const email = req.session.applicationDraft.email || '';
+  const firstName = req.session.applicationDraft.firstName || '';
+
+  if (!req.session.confirmationEmailSent) {
+    sendConfirmationEmail(email, firstName)
+      .then(() => {
+        req.session.confirmationEmailSent = true;
+        req.session.save(() => {});
+      })
+      .catch(e => console.error('Confirmation email error:', e));
+  }
+
+  res.render('submit', { email, firstName });
 });
 
 router.post('/submit', requireSession, async (req, res) => {
@@ -433,10 +442,11 @@ router.post('/submit', requireSession, async (req, res) => {
     req.session.verified = null;
     req.session.idme = null;
     req.session.idUploadsMeta = null;
+    req.session.confirmationEmailSent = null;
     req.session.save((err) => {
       if (err) return res.status(500).render('error', { message: 'Session save failed.' });
       sendConfirmationEmail(data.email, data.firstName)
-        .catch(e => console.error('Confirmation email error:', e.message))
+        .catch(e => console.error('Confirmation email error:', e))
         .finally(() => res.render('success'));
     });
   } catch (err) {
@@ -512,11 +522,11 @@ async function sendConfirmationEmail(email, firstName) {
   try {
     const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
     const smtpPort = parseInt(process.env.SMTP_PORT, 10) || 465;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
+    const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER || process.env.EMAIL_USER;
+    const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || process.env.EMAIL_PASS;
 
     if (!smtpUser || !smtpPass) {
-      console.error('SMTP credentials not configured. SMTP_USER and SMTP_PASS environment variables are required.');
+      console.error('SMTP credentials not configured. Set one of: SMTP_USER/SMTP_PASS, GMAIL_USER/GMAIL_APP_PASSWORD, GMAIL_USER/GMAIL_PASS, or EMAIL_USER/EMAIL_PASS.');
       return;
     }
 
