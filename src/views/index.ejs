@@ -253,7 +253,6 @@
       .hero-btn-primary:hover,
       .hero-btn-primary:active {
         background: var(--primary-dark);
-        transform: translateY(-3px);
         color: #fff;
         text-decoration: none;
         box-shadow: none;
@@ -263,8 +262,7 @@
         color: #fff;
         text-decoration: none;
         box-shadow: none;
-        outline: 2px solid var(--primary-light);
-        outline-offset: 2px;
+        outline: none;
       }
       .hero-btn-accent {
         background: var(--accent-green);
@@ -273,7 +271,6 @@
       .hero-btn-accent:hover,
       .hero-btn-accent:active {
         background: var(--accent-green-dark);
-        transform: translateY(-3px);
         color: #fff;
         text-decoration: none;
         box-shadow: none;
@@ -283,8 +280,7 @@
         color: #fff;
         text-decoration: none;
         box-shadow: none;
-        outline: 2px solid var(--accent-green);
-        outline-offset: 2px;
+        outline: none;
       }
       .hero-btn-ghost {
         background: transparent;
@@ -296,7 +292,6 @@
         background: var(--surface-dark);
         border-color: var(--primary-light);
         color: var(--primary);
-        transform: translateY(-3px);
         text-decoration: none;
         box-shadow: none;
       }
@@ -306,8 +301,7 @@
         color: var(--primary);
         text-decoration: none;
         box-shadow: none;
-        outline: 2px solid var(--primary-light);
-        outline-offset: 2px;
+        outline: none;
       }
       @media (max-width: 768px) {
         .hero { padding: 80px 0 60px; min-height: 420px; }
@@ -700,6 +694,14 @@
         color: #fff;
         text-decoration: none;
         box-shadow: none;
+      }
+      .home-header nav a.btn.primary.home-apply-btn:focus,
+      .home-header nav a.btn.primary.home-apply-btn:active,
+      .home-header nav a.btn.primary.home-apply-btn:focus-visible {
+        background: var(--primary-dark);
+        color: #fff;
+        box-shadow: none;
+        outline: none;
       }
       @media (max-width: 700px) {
         .home-header nav a.btn.primary.home-apply-btn {
